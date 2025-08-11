@@ -1,27 +1,31 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
-import { RoundState } from "@prisma/client";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== "GET") return res.status(405).end();
-  if (req.headers["x-admin"] !== "1") return res.status(403).json({ ok: false, error: "forbidden" });
-
   const eventId = String(req.query.id);
   const round = await prisma.round.findFirst({
-    where: { eventId, state: RoundState.RUNNING },
+    where: { eventId },
     orderBy: { number: "desc" },
+    select: { id: true, number: true },
   });
-  if (!round) return res.json({ ok: true, rows: [] });
-
-  const rows = await prisma.match.findMany({
+  if (!round) return res.json({ roundNumber: 0, matches: [] });
+  const matches = await prisma.match.findMany({
     where: { eventId, roundId: round.id },
-    orderBy: { tableNo: "asc" },
-    select: {
-      id: true, tableNo: true, reported: true, winnerId: true,
-      P1: { select: { id: true, nickname: true } },
-      P2: { select: { id: true, nickname: true } },
+    include: {
+      P1: { include: { user: { select: { nickname: true } } } },
+      P2: { include: { user: { select: { nickname: true } } } },
     },
+    orderBy: [{ tableNo: "asc" }, { id: "asc" }],
   });
-
-  res.json({ ok: true, rows });
+  const data = matches.map((m) => ({
+    id: m.id,
+    tableNo: m.tableNo,
+    p1Id: m.p1Id,
+    p2Id: m.p2Id,
+    p1Nickname: m.P1?.user.nickname ?? null,
+    p2Nickname: m.P2?.user.nickname ?? null,
+    winnerId: m.winnerId,
+    reported: m.reported,
+  }));
+  res.json({ roundNumber: round.number, matches: data });
 }

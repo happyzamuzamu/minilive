@@ -1,124 +1,91 @@
-import { PrismaClient } from "@prisma/client";
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
 
-/** 이 이벤트에서 두 유저가 과거에 맞붙었는지 */
-export async function alreadyPlayed(eventId: string, a: string, b: string) {
-  if (a === b) return true;
-  const count = await prisma.match.count({
-    where: {
-      eventId,
-      OR: [
-        { p1Id: a, p2Id: b },
-        { p1Id: b, p2Id: a },
-      ],
-    },
-  });
-  return count > 0;
-}
+type Pair = { p1Id: number; p2Id: number | null };
+type BuildResult = { roundId: number; pairs: Pair[]; tables: { matchId: number; tableNo: number }[] };
 
-/** 부전승(BYE) 매치 생성: p2 없음, 즉시 보고처리 + 승자 = playerId */
-export async function createByeMatch(
-  eventId: string,
-  roundId: number,
-  playerId: string,
-  tableNo: number
-) {
-  await prisma.match.create({
-    data: {
-      eventId,
-      roundId,
-      tableNo,
-      p1Id: playerId,
-      reported: true,
-      winnerId: playerId,
-    },
-  });
-}
-
-export type PairingResult = {
-  pairs: Array<[string, string] | [string]>;
-  tables: number;
-};
-
-/** 엔트리 wins 기준 스위스 한 번 생성(간단판) */
-export async function swissPairingOnce(eventId: string, roundId: number): Promise<PairingResult> {
+async function getEntriesSorted(eventId: string) {
   const entries = await prisma.entry.findMany({
     where: { eventId },
-    select: { userId: true, wins: true, losses: true },
-    orderBy: [{ wins: "desc" }, { losses: "asc" }],
+    orderBy: [{ wins: "desc" }, { losses: "asc" }, { id: "asc" }],
   });
+  return entries;
+}
 
-  // 점수 버킷
-  const buckets = new Map<number, string[]>();
-  for (const e of entries) {
-    const arr = buckets.get(e.wins) || [];
-    arr.push(e.userId);
-    buckets.set(e.wins, arr);
-  }
-
-  const pairs: Array<[string, string] | [string]> = [];
-  const used = new Set<string>();
-  const scores = Array.from(buckets.keys()).sort((a, b) => b - a);
-
-  for (const sc of scores) {
-    const group = (buckets.get(sc) || []).filter((u) => !used.has(u));
-
-    // 셔플
-    for (let i = group.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [group[i], group[j]] = [group[j], group[i]];
+async function getPlayedPairsMap(eventId: string) {
+  const matches = await prisma.match.findMany({
+    where: { eventId, reported: true },
+    select: { p1Id: true, p2Id: true },
+  });
+  const set = new Set<string>();
+  for (const m of matches) {
+    if (m.p1Id != null && m.p2Id != null) {
+      const a = Math.min(m.p1Id, m.p2Id);
+      const b = Math.max(m.p1Id, m.p2Id);
+      set.add(`${a}-${b}`);
     }
+  }
+  return set;
+}
 
-    while (group.length) {
-      const a = group.shift()!;
-      if (!group.length) {
-        // 홀수면 아래 점수대에서 당겨오기
-        let b: string | undefined;
-        for (const s2 of scores.slice(scores.indexOf(sc) + 1)) {
-          const lower = (buckets.get(s2) || []).filter((u) => !used.has(u));
-          if (lower.length) {
-            b = lower.shift()!;
-            buckets.set(s2, lower);
-            break;
-          }
-        }
-        if (b) {
-          used.add(a); used.add(b);
-          pairs.push([a, b]);
-        } else {
-          // 정말 없으면 BYE
-          pairs.push([a]);
-          used.add(a);
-        }
-      } else {
-        // 재대진 회피 시도
-        let partnerIdx = -1;
-        for (let i = 0; i < group.length; i++) {
-          const cand = group[i];
-          // eslint-disable-next-line no-await-in-loop
-          const clash = await alreadyPlayed(eventId, a, cand);
-          if (!clash) { partnerIdx = i; break; }
-        }
-        if (partnerIdx === -1) partnerIdx = 0; // 불가피하면 허용
-        const b = group.splice(partnerIdx, 1)[0];
-        used.add(a); used.add(b);
-        pairs.push([a, b]);
+function canPair(a: number, b: number, played: Set<string>) {
+  if (a == null || b == null) return true;
+  const x = Math.min(a, b);
+  const y = Math.max(a, b);
+  return !played.has(`${x}-${y}`);
+}
+
+function greedySwissPair(entryIds: number[], played: Set<string>) {
+  const used = new Set<number>();
+  const pairs: Pair[] = [];
+  for (let i = 0; i < entryIds.length; i++) {
+    const a = entryIds[i];
+    if (used.has(a)) continue;
+    let paired = false;
+    for (let j = i + 1; j < entryIds.length; j++) {
+      const b = entryIds[j];
+      if (used.has(b)) continue;
+      if (canPair(a, b, played)) {
+        pairs.push({ p1Id: a, p2Id: b });
+        used.add(a);
+        used.add(b);
+        paired = true;
+        break;
       }
     }
-  }
-
-  // 매치 생성
-  let table = 1;
-  for (const p of pairs) {
-    if (p.length === 1) {
-      await createByeMatch(eventId, roundId, p[0], table++);
-    } else {
-      const [p1, p2] = p as [string, string];
-      await prisma.match.create({
-        data: { eventId, roundId, tableNo: table++, p1Id: p1, p2Id: p2, reported: false },
-      });
+    if (!paired) {
+      pairs.push({ p1Id: a, p2Id: null });
+      used.add(a);
     }
   }
+  return pairs;
+}
 
-  return { pairs, tables: table - 1 };
+export async function swissBuildRound(eventId: string, bestOf: number): Promise<BuildResult> {
+  const entries = await getEntriesSorted(eventId);
+  const entryIds = entries.map((e) => e.id);
+  const played = await getPlayedPairsMap(eventId);
+  const pairs = greedySwissPair(entryIds, played);
+  const last = await prisma.round.findFirst({
+    where: { eventId },
+    orderBy: { number: "desc" },
+    select: { number: true },
+  });
+  const nextNumber = (last?.number ?? 0) + 1;
+  const round = await prisma.round.create({ data: { eventId, number: nextNumber } });
+  const created = await prisma.$transaction(
+    pairs.map((p, idx) =>
+      prisma.match.create({
+        data: {
+          eventId,
+          roundId: round.id,
+          tableNo: idx + 1,
+          p1Id: p.p1Id ?? null,
+          p2Id: p.p2Id ?? null,
+          reported: false,
+        },
+      })
+    )
+  );
+  const tables = created.map((m) => ({ matchId: m.id, tableNo: m.tableNo ?? 0 }));
+  return { roundId: round.id, pairs, tables };
 }

@@ -1,11 +1,10 @@
-// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL") // ex) file:./prisma/dev.db
+  url      = env("DATABASE_URL")
 }
 
 enum EventState {
@@ -16,118 +15,109 @@ enum EventState {
 }
 
 model User {
-  id        String   @id
-  nickname  String   @unique
-  password  String?
-  rating    Int      @default(1500)
-  games     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  entries   Entry[]
-  histories RatingHistory[]
+  id         String          @id
+  nickname   String          @unique
+  password   String?
+  rating     Int             @default(1500)
+  games      Int             @default(0)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  entries    Entry[]
+  histories  RatingHistory[]
 }
 
 model Event {
-  id              String     @id
+  id              String          @id
   name            String
-  date            DateTime   @default(now())
-  roundsCount     Int        @default(5)
-  bestOf          Int        @default(1)
-  format          String     @default("SWISS")
-  state           EventState @default(DRAFT)
+  date            DateTime
+  rounds          Int             @default(5)     // 스위스 라운드 수(씨드에서 사용하는 필드명)
+  bestOf          Int             @default(1)
+  format          String
+  state           EventState
+  roundLengthSec  Int             @default(3000)  // 전광판 타이머용
+  roundStartedAt  DateTime?
 
-  roundLengthSec  Int        @default(2700) // 라운드 길이(초)
-  roundStartedAt  DateTime?  // 현재 라운드 시작 시각(없으면 null)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-
-  entries   Entry[]
-  roundsRel Round[]
-  matches   Match[]
-  histories RatingHistory[]
+  entries         Entry[]
+  roundsRel       Round[]                           // 라운드 관계필드는 roundsRel로 (씨드의 rounds와 충돌 방지)
+  matches         Match[]
+  histories       RatingHistory[]
 }
 
 model Entry {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         Int       @id @default(autoincrement())
+  userId     String
+  eventId    String
+  wins       Int       @default(0)
+  losses     Int       @default(0)
+  eloDelta   Int       @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  userId    String
-  eventId   String
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event      Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
-  wins      Int      @default(0)
-  losses    Int      @default(0)
-  eloDelta  Int      @default(0)
-  tables    Int?
-
-  User      User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  Event     Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  matchesAsP1   Match[] @relation("P1")
-  matchesAsP2   Match[] @relation("P2")
-  winsAsWinner  Match[] @relation("Winner")
+  matchesAsP1  Match[] @relation("P1")
+  matchesAsP2  Match[] @relation("P2")
+  matchesWon   Match[] @relation("Winner")
 
   @@unique([userId, eventId])
 }
 
 model Round {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         Int       @id @default(autoincrement())
+  eventId    String
+  number     Int
+  startedAt  DateTime?
+  endedAt    DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  eventId   String
-  number    Int
-  startedAt DateTime?
-
-  Event     Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  matches   Match[]
+  event      Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  matches    Match[]
 
   @@unique([eventId, number])
 }
 
 model Match {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         Int       @id @default(autoincrement())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  eventId   String
-  roundId   Int
-  tableNo   Int?
+  eventId    String
+  roundId    Int
+  tableNo    Int?
+  p1Id       Int?
+  p2Id       Int?
+  winnerId   Int?
+  reported   Boolean   @default(false)
 
-  p1Id      Int?
-  p2Id      Int?
-  winnerId  Int?
+  event    Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  round    Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)
 
-  reported  Boolean  @default(false)
-
-  Event     Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  Round     Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)
-
-  P1        Entry? @relation("P1", fields: [p1Id], references: [id])
-  P2        Entry? @relation("P2", fields: [p2Id], references: [id])
-  Winner    Entry? @relation("Winner", fields: [winnerId], references: [id])
+  P1       Entry? @relation("P1",     fields: [p1Id],     references: [id])
+  P2       Entry? @relation("P2",     fields: [p2Id],     references: [id])
+  Winner   Entry? @relation("Winner", fields: [winnerId], references: [id])
 
   histories RatingHistory[]
 }
 
 model RatingHistory {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
-
+  id        Int       @id @default(autoincrement())
+  createdAt DateTime  @default(now())
   userId    String
   eventId   String
   matchId   Int
   seasonId  String
-
   old       Int
   delta     Int
   new       Int
 
-  User  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  Event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  Match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user   User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event  Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  match  Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
 
   @@unique([userId, matchId])
 }

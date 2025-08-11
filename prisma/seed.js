@@ -2,20 +2,19 @@ const { PrismaClient, EventState } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 async function main() {
-  const eventId = "running-0811";
-
-  const user = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { id: "demo-user" },
     update: {},
-    create: {
-      id: "demo-user",
-      nickname: "데모유저",
-      password: null,
-      rating: 1500,
-      games: 0,
-    },
+    create: { id: "demo-user", nickname: "데모", password: null },
   });
 
+  await prisma.user.upsert({
+    where: { id: "user-2" },
+    update: {},
+    create: { id: "user-2", nickname: "상대", password: null },
+  });
+
+  const eventId = "running-0811";
   await prisma.event.upsert({
     where: { id: eventId },
     update: {},
@@ -23,7 +22,7 @@ async function main() {
       id: eventId,
       name: "테스트 러닝 이벤트",
       date: new Date(),
-      roundsCount: 5,
+      rounds: 5,
       bestOf: 1,
       format: "SWISS",
       state: EventState.DRAFT,
@@ -33,24 +32,21 @@ async function main() {
   });
 
   await prisma.entry.upsert({
-    where: { userId_eventId: { userId: user.id, eventId } },
+    where: { userId_eventId: { userId: "demo-user", eventId } },
     update: {},
-    create: { userId: user.id, eventId },
+    create: { userId: "demo-user", eventId },
   });
 
-  await prisma.round.upsert({
-    where: { eventId_number: { eventId, number: 1 } },
+  await prisma.entry.upsert({
+    where: { userId_eventId: { userId: "user-2", eventId } },
     update: {},
-    create: { eventId, number: 1, startedAt: null },
+    create: { userId: "user-2", eventId },
   });
 }
 
 main()
-  .then(async () => {
-    await prisma.$disconnect();
-  })
-  .catch(async (e) => {
-    console.error("Seed FAILED:", e);
-    await prisma.$disconnect();
+  .then(() => prisma.$disconnect())
+  .catch((e) => {
+    console.error(e);
     process.exit(1);
   });

@@ -2,49 +2,47 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== "GET") return res.status(405).end();
-  const { id } = req.query;
-  if (!id || typeof id !== "string") return res.status(400).json({ error: "invalid id" });
-
-  const event = await prisma.event.findUnique({ where: { id } });
-  if (!event) return res.status(404).json({ error: "event not found" });
-
-  const latestRound = await prisma.round.findFirst({
-    where: { eventId: id },
-    orderBy: { id: "desc" },
+  const eventId = String(req.query.id);
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: {
+      id: true,
+      name: true,
+      state: true,
+      format: true,
+      bestOf: true,
+      rounds: true,
+      roundLengthSec: true,
+      roundStartedAt: true,
+      date: true,
+      createdAt: true,
+      updatedAt: true,
+    },
   });
-
-  let reportedInCurrentRound = 0;
-  let totalMatchesInCurrentRound = 0;
-  let remainingSec: number | null = null;
-
-  if (latestRound) {
-    totalMatchesInCurrentRound = await prisma.match.count({ where: { roundId: latestRound.id } });
-    reportedInCurrentRound = await prisma.match.count({ where: { roundId: latestRound.id, reported: true } });
-
-    if (event.roundLengthSec && event.roundStartedAt) {
-      const elapsed = Math.floor((Date.now() - event.roundStartedAt.getTime()) / 1000);
-      remainingSec = Math.max(0, event.roundLengthSec - elapsed);
-    }
-  }
-
-  const currentRound = latestRound ? await prisma.round.count({ where: { eventId: id } }) : 0;
-
-  return res.json({
+  if (!event) return res.status(404).json({ error: "not found" });
+  const currentRound = await prisma.round.findFirst({
+    where: { eventId },
+    orderBy: { number: "desc" },
+    select: { id: true, number: true, startedAt: true, endedAt: true },
+  });
+  res.json({
     event: {
       id: event.id,
       name: event.name,
-      date: event.date.toISOString(),
       state: event.state,
-      rounds: event.rounds,
-      bestOf: event.bestOf,
       format: event.format,
-      roundLengthSec: event.roundLengthSec ?? null,
+      bestOf: event.bestOf,
+      roundsPlanned: event.rounds,
+      roundLengthSec: event.roundLengthSec,
+      roundStartedAt: event.roundStartedAt,
     },
-    currentRound,
-    totalRounds: event.rounds,
-    reportedInCurrentRound,
-    totalMatchesInCurrentRound,
-    remainingSec,
+    round: currentRound
+      ? {
+          id: currentRound.id,
+          number: currentRound.number,
+          startedAt: currentRound.startedAt,
+          endedAt: currentRound.endedAt,
+        }
+      : null,
   });
 }
