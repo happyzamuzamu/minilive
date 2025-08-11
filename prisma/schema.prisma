@@ -1,0 +1,133 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL") // ex) file:./prisma/dev.db
+}
+
+enum EventState {
+  DRAFT
+  RUNNING
+  ENDED
+  ARCHIVED
+}
+
+model User {
+  id        String   @id
+  nickname  String   @unique
+  password  String?
+  rating    Int      @default(1500)
+  games     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entries   Entry[]
+  histories RatingHistory[]
+}
+
+model Event {
+  id              String     @id
+  name            String
+  date            DateTime   @default(now())
+  roundsCount     Int        @default(5)
+  bestOf          Int        @default(1)
+  format          String     @default("SWISS")
+  state           EventState @default(DRAFT)
+
+  roundLengthSec  Int        @default(2700) // 라운드 길이(초)
+  roundStartedAt  DateTime?  // 현재 라운드 시작 시각(없으면 null)
+
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  entries   Entry[]
+  roundsRel Round[]
+  matches   Match[]
+  histories RatingHistory[]
+}
+
+model Entry {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId    String
+  eventId   String
+
+  wins      Int      @default(0)
+  losses    Int      @default(0)
+  eloDelta  Int      @default(0)
+  tables    Int?
+
+  User      User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  Event     Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  matchesAsP1   Match[] @relation("P1")
+  matchesAsP2   Match[] @relation("P2")
+  winsAsWinner  Match[] @relation("Winner")
+
+  @@unique([userId, eventId])
+}
+
+model Round {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  eventId   String
+  number    Int
+  startedAt DateTime?
+
+  Event     Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  matches   Match[]
+
+  @@unique([eventId, number])
+}
+
+model Match {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  eventId   String
+  roundId   Int
+  tableNo   Int?
+
+  p1Id      Int?
+  p2Id      Int?
+  winnerId  Int?
+
+  reported  Boolean  @default(false)
+
+  Event     Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  Round     Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  P1        Entry? @relation("P1", fields: [p1Id], references: [id])
+  P2        Entry? @relation("P2", fields: [p2Id], references: [id])
+  Winner    Entry? @relation("Winner", fields: [winnerId], references: [id])
+
+  histories RatingHistory[]
+}
+
+model RatingHistory {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+
+  userId    String
+  eventId   String
+  matchId   Int
+  seasonId  String
+
+  old       Int
+  delta     Int
+  new       Int
+
+  User  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  Event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  Match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, matchId])
+}
