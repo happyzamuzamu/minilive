@@ -1,6 +1,9 @@
-const nextConfig = {
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
   reactStrictMode: true,
-  eslint: { ignoreDuringBuilds: true },
+  poweredByHeader: false,
+  experimental: {},
   images: { unoptimized: true },
 };
 

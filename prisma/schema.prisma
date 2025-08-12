@@ -30,18 +30,21 @@ model Event {
   id              String          @id
   name            String
   date            DateTime
-  rounds          Int             @default(5)     // 스위스 라운드 수(씨드에서 사용하는 필드명)
-  bestOf          Int             @default(1)
-  format          String
+  rounds          Int             @default(5)     // 스위스 라운드 수
+  bestOf          Int             @default(1)     // BO1/BO3
+  format          String          // "SWISS" | "SE" 등
   state           EventState
-  roundLengthSec  Int             @default(3000)  // 전광판 타이머용
+  roundLengthSec  Int             @default(3000)  // 라운드 길이(초)
   roundStartedAt  DateTime?
+
+  // ✅ 새로 추가: 참가자 제한수(없으면 무제한)
+  cap             Int?
 
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
   entries         Entry[]
-  roundsRel       Round[]                           // 라운드 관계필드는 roundsRel로 (씨드의 rounds와 충돌 방지)
+  roundsRel       Round[]         // 라운드 관계 (필드명 충돌 방지용)
   matches         Match[]
   histories       RatingHistory[]
 }
