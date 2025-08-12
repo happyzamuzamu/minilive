@@ -1,154 +1,120 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-
-type EventLite = {
-  id: string;
-  name: string;
-  rounds: number;
-  bestOf: number;
-};
+"use client";
+import { useState } from "react";
 
 type Props = {
-  event: EventLite | null;
+  eventId?: string | number;
+  event?: string | number;
   onClose: () => void;
-  onUpdated: () => Promise<any>;
+  onUpdated: () => Promise<any> | void;
 };
 
-export default function RoundEditModal({ event, onClose, onUpdated }: Props) {
-  const [roundNumber, setRoundNumber] = useState<number>(event?.rounds ?? 1);
-  const [bestOf, setBestOf] = useState<number>(event?.bestOf ?? 1);
-  const [startNow, setStartNow] = useState<boolean>(true);
-  const [submitting, setSubmitting] = useState(false);
+export default function RoundEditModal({ eventId, event, onClose, onUpdated }: Props) {
+  const eid = String(eventId ?? event ?? "");
+  const [loading, setLoading] = useState<null | string>(null);
   const [error, setError] = useState<string | null>(null);
-  const canSubmit = !!event?.id && Number.isFinite(roundNumber) && roundNumber >= 1 && (bestOf === 1 || bestOf === 3);
-  const firstInputRef = useRef<HTMLInputElement | null>(null);
+  const [roundName, setRoundName] = useState<string>("");
 
-  useEffect(() => {
-    setRoundNumber(event?.rounds ?? 1);
-    setBestOf(event?.bestOf ?? 1);
-  }, [event?.id]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  useEffect(() => {
-    const t = setTimeout(() => firstInputRef.current?.focus(), 0);
-    return () => clearTimeout(t);
-  }, []);
-
-  const title = useMemo(() => `라운드 설정${event ? ` — ${event.name}` : ""}`, [event?.name]);
-
-  async function handleSubmit(e?: React.FormEvent) {
-    e?.preventDefault();
-    if (!canSubmit) {
-      setError("입력 값을 다시 확인하세요.");
+  async function call(action: string, body: any = {}) {
+    if (!eid) {
+      setError("이벤트 ID가 비어 있습니다.");
       return;
     }
+    setError(null);
+    setLoading(action);
     try {
-      setSubmitting(true);
-      setError(null);
-      const res = await fetch(`/api/admin/events/${encodeURIComponent(event!.id)}/round`, {
+      const res = await fetch(`/api/admin/events/${eid}/round`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          number: roundNumber,
-          bestOf,
-          startNow,
-        }),
+        body: JSON.stringify({ action, roundName, ...body }),
       });
       if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        throw new Error(t || `ROUND_UPDATE_FAILED (${res.status})`);
+        const t = await res.text();
+        throw new Error(t || `HTTP ${res.status}`);
       }
-      await onUpdated();
-      onClose();
-    } catch (err: any) {
-      setError(err?.message ?? "라운드 업데이트에 실패했습니다.");
+      await onUpdated?.();
+    } catch (e: any) {
+      setError(e?.message || "요청 실패");
     } finally {
-      setSubmitting(false);
+      setLoading(null);
     }
   }
 
+  if (!eid) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" onClick={onClose}>
+        <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="px-5 py-4 border-b border-black/10">
+            <h2 className="text-lg font-bold tracking-tight" style={{ fontFamily: `"NeoDunggeunmo","Noto Sans KR",system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif` }}>
+              라운드 제어
+            </h2>
+          </div>
+          <div className="px-5 py-4 space-y-4">
+            <div className="text-sm text-red-600">이벤트 ID가 전달되지 않아 작업을 진행할 수 없습니다.</div>
+            <div className="flex justify-end">
+              <button onClick={onClose} className="rounded-xl border border-black/20 px-4 py-2">닫기</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-black/10">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-black/10">
-          <h2 className="text-lg font-bold tracking-tight" style={{ fontFamily: `"NeoDunggeunmo", "Noto Sans KR", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif` }}>
-            {title}
+          <h2 className="text-lg font-bold tracking-tight" style={{ fontFamily: `"NeoDunggeunmo","Noto Sans KR",system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif` }}>
+            라운드 제어
           </h2>
         </div>
-
-        <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4" autoComplete="off">
-          <div>
-            <label className="block text-sm font-medium mb-1" style={{ fontFamily: `"Noto Sans KR", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif` }}>라운드 번호</label>
+        <div className="px-5 py-4 space-y-4">
+          <div className="space-y-2">
+            <label className="block text-sm text-gray-600">라운드 이름</label>
             <input
-              ref={firstInputRef}
-              type="number"
-              min={1}
-              step={1}
-              value={Number.isFinite(roundNumber) ? roundNumber : ""}
-              onChange={(e) => {
-                const v = e.target.value.trim();
-                const n = v === "" ? NaN : parseInt(v, 10);
-                setRoundNumber(n);
-              }}
-              className="w-full rounded-xl border border-black/20 px-3 py-2 outline-none focus:ring focus:ring-black/20"
-              disabled={!event || submitting}
-              required
-              inputMode="numeric"
+              value={roundName}
+              onChange={(e) => setRoundName(e.target.value)}
+              placeholder="Round 1"
+              className="w-full rounded-xl border border-black/20 px-3 py-2 outline-none"
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1" style={{ fontFamily: `"Noto Sans KR", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif` }}>Best of</label>
-            <select
-              value={bestOf}
-              onChange={(e) => setBestOf(parseInt(e.target.value, 10))}
-              className="w-full rounded-xl border border-black/20 px-3 py-2"
-              disabled={!event || submitting}
-            >
-              <option value={1}>Bo1</option>
-              <option value={3}>Bo3</option>
-            </select>
-          </div>
+          {error ? <div className="text-sm text-red-600">{error}</div> : null}
 
-          <label className="flex items-center gap-2 text-sm" style={{ fontFamily: `"Noto Sans KR", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif` }}>
-            <input
-              type="checkbox"
-              checked={startNow}
-              onChange={(e) => setStartNow(e.target.checked)}
-              disabled={!event || submitting}
-            />
-            지금 시작으로 처리 (타이머/매치 즉시 준비)
-          </label>
-
-          {error && <p className="text-sm text-red-600">{error}</p>}
-
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="grid grid-cols-2 gap-3">
             <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl border border-black/20 px-4 py-2"
-              disabled={submitting}
+              onClick={() => call("pair")}
+              disabled={loading !== null}
+              className="rounded-xl border border-black/20 px-4 py-2 font-medium disabled:opacity-50"
             >
-              취소
+              {loading === "pair" ? "페어링..." : "스위스 페어링"}
             </button>
             <button
-              type="submit"
-              className="rounded-xl bg-black text-white px-4 py-2 disabled:opacity-50"
-              disabled={!canSubmit || submitting}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && canSubmit && !submitting) handleSubmit();
-              }}
+              onClick={() => call("start")}
+              disabled={loading !== null}
+              className="rounded-xl border border-black/20 px-4 py-2 font-medium disabled:opacity-50"
             >
-              {submitting ? "저장 중…" : "저장"}
+              {loading === "start" ? "시작 중..." : "라운드 시작"}
+            </button>
+            <button
+              onClick={() => call("end")}
+              disabled={loading !== null}
+              className="rounded-xl border border-black/20 px-4 py-2 font-medium disabled:opacity-50"
+            >
+              {loading === "end" ? "종료 중..." : "라운드 종료"}
+            </button>
+            <button
+              onClick={() => call("reset")}
+              disabled={loading !== null}
+              className="rounded-xl border border-black/20 px-4 py-2 font-medium disabled:opacity-50"
+            >
+              {loading === "reset" ? "리셋 중..." : "라운드 리셋"}
             </button>
           </div>
-        </form>
+
+          <div className="flex justify-end">
+            <button onClick={onClose} className="rounded-xl border border-black/20 px-4 py-2">닫기</button>
+          </div>
+        </div>
       </div>
     </div>
   );
